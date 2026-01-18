@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DNS_LOOKUP // V2.1</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        :root {
+            /* DARK MODE (Varsayılan) */
+            --bg-color: #050510;
+            --card-bg: rgba(20, 20, 40, 0.85);
+            --neon-primary: #00f3ff; /* Mavi */
+            --neon-secondary: #bc13fe; /* Mor */
+            --text-main: #e0e0e0;
+            --input-bg: rgba(255, 255, 255, 0.08);
+            --log-bg: #000000;
+            --success: #00ff9d;
+            --error: #ff0055;
+            --particle-color: rgba(0, 243, 255, 0.4);
+            --border-color: rgba(0, 243, 255, 0.3);
+        }
+
+        [data-theme="light"] {
+            /* LIGHT MODE */
+            --bg-color: #f0f2f5;
+            --card-bg: rgba(255, 255, 255, 0.95);
+            --neon-primary: #0056b3; 
+            --neon-secondary: #6610f2;
+            --text-main: #333333;
+            --input-bg: #ffffff;
+            --log-bg: #f8f9fa;
+            --success: #198754;
+            --error: #dc3545;
+            --particle-color: rgba(0, 86, 179, 0.2);
+            --border-color: rgba(0, 0, 0, 0.1);
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: 'JetBrains Mono', monospace;
+            margin: 0;
+            height: 100vh;
+            width: 100vw;
+            overflow: hidden; /* Taşmaları engelle */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative; /* Kritik düzeltme */
+        }
+
+        /* Arka Plan Canvas - En altta */
+        #bgCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0; /* En alt katman */
+            pointer-events: none; /* Tıklamayı engelle */
+        }
+
+        /* Üst Kontrol Butonları */
+        .top-controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 100; /* En üst katman */
+            display: flex;
+            gap: 10px;
+        }
+
+        .control-btn {
+            background: var(--card-bg);
+            border: 1px solid var(--neon-primary);
+            color: var(--text-main);
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: inherit;
+            transition: all 0.3s;
+        }
+        .control-btn:hover {
+            background: var(--neon-primary);
+            color: var(--bg-color);
+            box-shadow: 0 0 10px var(--neon-primary);
+        }
+
+        /* Ana İçerik Kutusu */
+        .main-wrapper {
+            position: relative; /* Kritik düzeltme: Z-index için şart */
+            z-index: 10; /* Canvas'ın üstünde */
+            display: flex;
+            gap: 20px;
+            width: 90%;
+            max-width: 1000px;
+            height: auto;
+            max-height: 90vh;
+        }
+
+        /* SOL PANEL */
+        .query-panel {
+            flex: 1.2;
+            background: var(--card-bg);
+            padding: 30px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            backdrop-filter: blur(5px);
+            box-shadow: 0 0 40px rgba(0, 0, 0, 0.3);
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* SAĞ PANEL (LOGLAR) */
+        .log-panel {
+            flex: 0.8;
+            background: var(--log-bg);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            padding: 15px;
+            font-size: 0.85rem;
+            color: var(--text-main);
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column-reverse; /* Yeni loglar üstte değil altta birikir, görsel hile */
+        }
+
+        h1 {
+            color: var(--neon-primary);
+            margin: 0 0 5px 0;
+            font-size: 1.8rem;
+            display: flex;
+            align-items: center;
+            text-shadow: 0 0 10px var(--neon-primary);
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            background-color: var(--success);
+            border-radius: 50%;
+            margin-right: 15px;
+            box-shadow: 0 0 10px var(--success);
+            animation: pulse 2s infinite;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            background: var(--input-bg);
+            border: 1px solid var(--neon-primary);
+            color: var(--text-main);
+            padding: 15px;
+            margin-top: 20px;
+            font-family: inherit;
+            font-size: 1rem;
+            border-radius: 4px;
+            outline: none;
+            transition: 0.3s;
+        }
+        input[type="text"]:focus {
+            box-shadow: 0 0 15px var(--particle-color);
+        }
+
+        /* History Chips */
+        .history-area {
+            display: flex;
+            gap: 8px;
+            margin: 10px 0 20px 0;
+            flex-wrap: wrap;
+            min-height: 25px;
+        }
+        .history-chip {
+            font-size: 0.7rem;
+            padding: 4px 8px;
+            border: 1px solid var(--neon-secondary);
+            border-radius: 12px;
+            cursor: pointer;
+            color: var(--neon-secondary);
+            transition: 0.2s;
+        }
+        .history-chip:hover {
+            background: var(--neon-secondary);
+            color: #fff;
+        }
+
+        button.action-btn {
+            width: 100%;
+            padding: 15px;
+            background: var(--neon-primary);
+            border: none;
+            color: #000;
+            font-weight: bold;
+            font-family: inherit;
+            cursor: pointer;
+            font-size: 1rem;
+            border-radius: 4px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: 0.2s;
+        }
+        button.action-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 0 20px var(--neon-primary);
+        }
+
+        /* Sonuç Alanı */
+        .result-box {
+            margin-top: 20px;
+            display: none; /* JS ile açılacak */
+            border-top: 1px solid var(--border-color);
+            padding-top: 15px;
+        }
+
+        .result-item {
+            background: rgba(128, 128, 128, 0.1);
+            padding: 10px;
+            margin-bottom: 5px;
+            border-left: 3px solid var(--neon-primary);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .copy-icon {
+            cursor: pointer;
+            color: var(--neon-secondary);
+        }
+        .copy-icon:hover { color: #fff; }
+
+        /* Log Satırları */
+        .log-entry { 
+            margin-bottom: 4px; 
+            border-bottom: 1px solid rgba(128,128,128,0.1); 
+            padding-bottom: 2px;
+            word-break: break-all;
+        }
+        .log-time { color: var(--neon-secondary); margin-right: 5px; font-size: 0.75rem;}
+        .log-success { color: var(--success); }
+        .log-error { color: var(--error); }
+
+        /* Mobil */
+        @media (max-width: 768px) {
+            .main-wrapper { flex-direction: column; overflow-y: auto; }
+            .log-panel { min-height: 150px; }
+        }
+
+        @keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
+    </style>
+</head>
+<body data-theme="dark">
+
+    <canvas id="bgCanvas"></canvas>
+
+    <div class="top-controls">
+        <div class="control-btn" onclick="toggleLang()" id="langBtn">EN</div>
+        <div class="control-btn" onclick="toggleTheme()" id="themeBtn"><i class="fas fa-sun"></i></div>
+    </div>
+
+    <div class="main-wrapper">
+        <div class="query-panel">
+            <h1><span class="status-dot"></span>DNS_LOOKUP</h1>
+            <p id="subtitle" style="opacity: 0.7; font-size: 0.8rem; margin-top:0;">SECURE DNS RESOLVER // MONGODB CONNECTED</p>
+
+            <input type="text" id="domainInput" placeholder="ENTER_DOMAIN (e.g., itu.edu.tr)" onkeypress="handleEnter(event)">
+            
+            <div class="history-area" id="historyArea"></div>
+
+            <button class="action-btn" onclick="performLookup()" id="scanBtn">INITIATE SCAN</button>
+
+            <div id="resultBox" class="result-box">
+                <div id="resTitle" style="color: var(--neon-primary); font-size: 0.9rem; margin-bottom: 10px;">SCAN RESULTS:</div>
+                <div id="ipResults"></div>
+                <div id="dbMessage" style="font-size: 0.8rem; margin-top: 10px; text-align: right;"></div>
+            </div>
+        </div>
+
+        <div class="log-panel" id="logPanel">
+            <div class="log-entry">
+                <span class="log-time">[SYSTEM]</span>
+                <span>System ready. Waiting for input...</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. DİL VERİLERİ ---
+        const langData = {
+            tr: {
+                subtitle: "GÜVENLİ DNS ÇÖZÜMLEYİCİ // MONGODB BAĞLI",
+                placeholder: "DOMAIN GİRİN (örn: itu.edu.tr)",
+                btn: "TARAMAYI BAŞLAT",
+                resTitle: "TARAMA SONUÇLARI:",
+                dbSuccess: "✓ MongoDB'ye Kaydedildi",
+                dbFail: "⚠ Veritabanı Hatası",
+                copied: "Kopyalandı!",
+                logStart: "Sorgu başladı:",
+                logOk: "Bulundu:",
+                logErr: "Hata:"
+            },
+            en: {
+                subtitle: "SECURE DNS RESOLVER // MONGODB CONNECTED",
+                placeholder: "ENTER_DOMAIN (e.g., itu.edu.tr)",
+                btn: "INITIATE SCAN",
+                resTitle: "SCAN RESULTS:",
+                dbSuccess: "✓ Saved to MongoDB",
+                dbFail: "⚠ Database Error",
+                copied: "Copied!",
+                logStart: "Scanning:",
+                logOk: "Resolved:",
+                logErr: "Error:"
+            }
+        };
+        let currentLang = 'en';
+
+        function toggleLang() {
+            currentLang = currentLang === 'en' ? 'tr' : 'en';
+            document.getElementById('langBtn').innerText = currentLang === 'en' ? 'TR' : 'EN';
+            
+            // UI Güncelle
+            document.getElementById('subtitle').innerText = langData[currentLang].subtitle;
+            document.getElementById('domainInput').placeholder = langData[currentLang].placeholder;
+            document.getElementById('scanBtn').innerText = langData[currentLang].btn;
+            document.getElementById('resTitle').innerText = langData[currentLang].resTitle;
+            
+            addLog(`Language set to [${currentLang.toUpperCase()}]`);
+        }
+
+        // --- 2. TEMA ---
+        function toggleTheme() {
+            const body = document.body;
+            const newTheme = body.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+            body.setAttribute('data-theme', newTheme);
+            document.getElementById('themeBtn').innerHTML = newTheme === 'dark' ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>';
+        }
+
+        // --- 3. GEÇMİŞ (History) ---
+        function addToHistory(domain) {
+            const area = document.getElementById('historyArea');
+            // Varsa ekleme
+            if([...area.children].some(c => c.innerText === domain)) return;
+
+            const chip = document.createElement('div');
+            chip.className = 'history-chip';
+            chip.innerText = domain;
+            chip.onclick = () => {
+                document.getElementById('domainInput').value = domain;
+                performLookup();
+            };
+            area.prepend(chip);
+            if(area.children.length > 3) area.removeChild(area.lastChild);
+        }
+
+        // --- 4. LOGLAMA ---
+        function addLog(msg, type='info') {
+            const panel = document.getElementById('logPanel');
+            const time = new Date().toLocaleTimeString('tr-TR', {hour12:false});
+            let colorClass = '';
+            if(type==='success') colorClass='log-success';
+            if(type==='error') colorClass='log-error';
+
+            const div = document.createElement('div');
+            div.className = 'log-entry';
+            div.innerHTML = `<span class="log-time">[${time}]</span><span class="${colorClass}">${msg}</span>`;
+            panel.insertBefore(div, panel.firstChild);
+        }
+
+        // --- 5. KOPYALAMA ---
+        function copyToClipboard(text, el) {
+            navigator.clipboard.writeText(text);
+            const originalClass = el.className;
+            el.className = "fas fa-check";
+            addLog(`${langData[currentLang].copied}: ${text}`, 'success');
+            setTimeout(() => el.className = originalClass, 1500);
+        }
+
+        // --- 6. SORGU İŞLEMİ (BACKEND BAĞLANTISI) ---
+        function handleEnter(e) { if(e.key === 'Enter') performLookup(); }
+
+        async function performLookup() {
+            const domain = document.getElementById('domainInput').value.trim();
+            if(!domain) return;
+
+            const btn = document.getElementById('scanBtn');
+            const originalText = btn.innerText;
+            btn.innerText = "...";
+            btn.disabled = true;
+
+            addToHistory(domain);
+            addLog(`${langData[currentLang].logStart} ${domain}`);
+
+            try {
+                const res = await fetch('/lookup', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                    body: `domain=${domain}`
+                });
+                const data = await res.json();
+                
+                document.getElementById('resultBox').style.display = 'block';
+                const ipContainer = document.getElementById('ipResults');
+                const dbMsg = document.getElementById('dbMessage');
+                
+                ipContainer.innerHTML = '';
+
+                if(data.status === 'success') {
+                    addLog(`${langData[currentLang].logOk} ${domain}`, 'success');
+                    data.ips.forEach(ip => {
+                        ipContainer.innerHTML += `
+                            <div class="result-item">
+                                <span>${ip}</span>
+                                <i class="fas fa-copy copy-icon" onclick="copyToClipboard('${ip}', this)"></i>
+                            </div>`;
+                    });
+                    
+                    if(data.db_saved) {
+                        dbMsg.innerHTML = `<span style="color:var(--success)">${langData[currentLang].dbSuccess}</span>`;
+                    } else {
+                        dbMsg.innerHTML = `<span style="color:var(--error)">${langData[currentLang].dbFail}</span>`;
+                        addLog("DB Write Failed", 'error');
+                    }
+                } else {
+                    ipContainer.innerHTML = `<div style="color:var(--error)">${data.message}</div>`;
+                    addLog(`${langData[currentLang].logErr} ${data.message}`, 'error');
+                }
+
+            } catch(err) {
+                console.error(err);
+                addLog("System Connection Error", 'error');
+            } finally {
+                btn.innerText = originalText;
+                btn.disabled = false;
+            }
+        }
+
+        // --- 7. ARKA PLAN CANVAS (Optimize Edildi) ---
+        const canvas = document.getElementById('bgCanvas');
+        const ctx = canvas.getContext('2d');
+        let particles = [];
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        class Particle {
+            constructor() { this.reset(); }
+            reset() {
+                this.x = Math.random() * canvas.width;
+                this.y = Math.random() * canvas.height;
+                this.vx = (Math.random() - 0.5) * 0.5;
+                this.vy = (Math.random() - 0.5) * 0.5;
+                this.size = Math.random() * 2;
+            }
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                if(this.x<0 || this.x>canvas.width || this.y<0 || this.y>canvas.height) this.reset();
+            }
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI*2);
+                ctx.fill();
+            }
+        }
+
+        for(let i=0; i<40; i++) particles.push(new Particle());
+
+        function animate() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Rengi burada al (Performans için döngü dışına alma ihtimali var ama tema değişimi için burada)
+            const style = getComputedStyle(document.body);
+            ctx.fillStyle = style.getPropertyValue('--particle-color');
+            ctx.strokeStyle = style.getPropertyValue('--particle-color');
+
+            particles.forEach(p => {
+                p.update();
+                p.draw();
+                particles.forEach(p2 => {
+                    let dx = p.x - p2.x;
+                    let dy = p.y - p2.y;
+                    if(dx*dx + dy*dy < 10000) { // mesafe < 100
+                        ctx.beginPath();
+                        ctx.moveTo(p.x, p.y);
+                        ctx.lineTo(p2.x, p2.y);
+                        ctx.stroke();
+                    }
+                });
+            });
+            requestAnimationFrame(animate);
+        }
+        animate();
+    </script>
+</body>
+</html>
