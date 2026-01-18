@@ -1,106 +1,56 @@
-import os
-import socket
-import datetime
-from flask import Flask, render_template, request, jsonify
+﻿from flask import Flask, render_template, request, jsonify
+import dns.resolver
 from pymongo import MongoClient
-from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
+import os
+import boto3
+import json
 
 app = Flask(__name__)
 
-# --- AYARLAR (Environment Variables) ---
-# Proje dosyasındaki "Ortam değişkenleri ile yapılandırma" maddesi [cite: 26]
-MONGO_HOST = os.environ.get('MONGO_HOST', 'localhost')
-MONGO_PORT = int(os.environ.get('MONGO_PORT', 27017))
-MONGO_USER = os.environ.get('MONGO_USER', 'admin')
-MONGO_PASS = os.environ.get('MONGO_PASSWORD', 'password')
-APP_PORT = int(os.environ.get('FLASK_PORT', 5889))
-
-# --- MONGODB BAĞLANTISI ---
-def get_db_connection():
+# --- [ADIM 7] SECRETS MANAGER ENTEGRASYONU ---
+def get_secret():
+    secret_name = "emir-dns-mongo-secret-final"
+    region_name = "us-east-1"
+    session = boto3.session.Session()
+    client = session.client(service_name='secretsmanager', region_name=region_name)
     try:
-        # Authentication ile bağlantı dizesi
-        client = MongoClient(
-            host=MONGO_HOST,
-            port=MONGO_PORT,
-            username=MONGO_USER,
-            password=MONGO_PASS,
-            serverSelectionTimeoutMS=2000
-        )
-        # Bağlantıyı test et
-        client.server_info()
-        return client
+        get_secret_value_response = client.get_secret_value(SecretId=secret_name)
+        secret = get_secret_value_response['SecretString']
+        return json.loads(secret)
     except Exception as e:
-        print(f"Veritabanı hatası: {e}")
-        return None
+        print(f"Error retrieving secret: {e}")
+        # Hata olursa fallback (Yedek)
+        return {"username": "admin", "password": "password123"}
 
-# --- ROTALAR ---
+# Şifreyi kasadan çek
+secrets = get_secret()
+MONGO_USER = secrets['username']
+MONGO_PASS = secrets['password']
+MONGO_HOST = os.environ.get('MONGO_HOST', 'mongodb')
+# ---------------------------------------------
 
-@app.route('/')
+client = MongoClient(f'mongodb://{MONGO_USER}:{MONGO_PASS}@{MONGO_HOST}:27017/')
+db = client['dns_db']
+collection = db['queries']
+
+@app.route('/', methods=['GET', 'POST'])
 def index():
-    """Ana Sayfayı Göster"""
-    return render_template('index.html')
+    result = None
+    error = None
+    if request.method == 'POST':
+        domain = request.form.get('domain')
+        try:
+            answers = dns.resolver.resolve(domain, 'A')
+            ip_addresses = [r.to_text() for r in answers]
+            result = ip_addresses
+            collection.insert_one({'domain': domain, 'ips': ip_addresses})
+        except Exception as e:
+            error = str(e)
+    return render_template('index.html', result=result, error=error)
 
 @app.route('/health')
-def health_check():
-    """AWS Load Balancer için Sağlık Kontrolü """
-    # Veritabanı bağlantısını kontrol et
-    client = get_db_connection()
-    db_status = "healthy" if client else "unhealthy"
-    if client:
-        client.close()
-    
-    # 200 OK döndürmek zorundayız
-    return jsonify({
-        "status": "healthy",
-        "database": db_status,
-        "timestamp": datetime.datetime.now().isoformat()
-    }), 200
-
-@app.route('/lookup', methods=['POST'])
-def lookup():
-    """DNS Sorgusu Yap ve Kaydet [cite: 22, 23]"""
-    domain = request.form.get('domain')
-    
-    if not domain:
-        return jsonify({"error": "Domain gerekli"}), 400
-
-    result = {
-        "domain": domain,
-        "query_time": datetime.datetime.now().isoformat(),
-        "client_ip": request.remote_addr
-    }
-
-    try:
-        # 1. DNS Sorgusu (A Kaydı)
-        ip_list = []
-        ais = socket.getaddrinfo(domain, 0, 0, 0, 0)
-        for result_tuple in ais:
-            ip_list.append(result_tuple[-1][0])
-        
-        # Tekrar eden IP'leri temizle
-        result["ips"] = list(set(ip_list))
-        result["status"] = "success"
-
-        # 2. Veritabanına Kayıt [cite: 23]
-        client = get_db_connection()
-        if client:
-            db = client['dnsdb']
-            db.queries.insert_one(result.copy()) # Copy because _id is added
-            result["db_saved"] = True
-            client.close()
-        else:
-            result["db_saved"] = False
-            result["db_error"] = "Veritabanına ulaşılamadı"
-
-    except socket.gaierror:
-        result["status"] = "error"
-        result["message"] = "Domain bulunamadı veya geçersiz."
-    except Exception as e:
-        result["status"] = "error"
-        result["message"] = str(e)
-
-    return jsonify(result)
+def health():
+    return jsonify(status='healthy'), 200
 
 if __name__ == '__main__':
-    # Proje gereksinimi: Port 5889 
-    app.run(host='0.0.0.0', port=APP_PORT)
+    app.run(host='0.0.0.0', port=5889)

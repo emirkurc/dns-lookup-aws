@@ -1,0 +1,9 @@
+{
+    "BackupPlanName": "Emir-Project-Full-Backup",
+    "Rules": [{
+        "RuleName": "Daily-EBS-Backup",
+        "TargetBackupVaultName": "Default",
+        "ScheduleExpression": "cron(0 3 * * ? *)",
+        "Lifecycle": { "DeleteAfterDays": 7 }
+    }]
+}
