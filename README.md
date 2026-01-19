@@ -6,9 +6,17 @@
 ![Docker](https://img.shields.io/badge/Docker-Container-2496ED?style=for-the-badge&logo=docker&logoColor=white)
 ![MongoDB](https://img.shields.io/badge/MongoDB-Database-47A248?style=for-the-badge&logo=mongodb&logoColor=white)
 
-Bu proje, **Sanallaştırma ve Bulut Teknolojileri** dersi dönem ödevi kapsamında geliştirilmiştir. Amazon Web Services (AWS) üzerinde çalışan, yüksek erişilebilirliğe (High Availability) sahip, hataya dayanıklı (Fault Tolerant) ve otomatik ölçeklenebilir (Auto Scalable) bir DNS sorgulama mimarisidir.
+Bu proje; Amazon Web Services (AWS) üzerinde çalışan, yüksek erişilebilirliğe (High Availability) sahip, hataya dayanıklı (Fault Tolerant) ve otomatik ölçeklenebilir (Auto Scalable) bir DNS sorgulama mimarisidir.
 
 ---
+# AWS Scalable DNS Lookup Service
+
+> **🚀 CANLI DEMO:** Proje şu an AWS üzerinde aktif çalışmaktadır. Aşağıdaki linke tıklayarak test edebilirsiniz:
+> 
+> 👉 **[http://emir-dns-alb-1016005088.us-east-1.elb.amazonaws.com](http://emir-dns-alb-1016005088.us-east-1.elb.amazonaws.com)**
+>
+> *(Not: Link çalışmıyorsa proje sunumu tamamlandığı için AWS kaynakları `cleanup.sh` ile kapatılmış olabilir.)*
+
 
 ## 🎯 Proje Amacı ve Kapsamı
 
