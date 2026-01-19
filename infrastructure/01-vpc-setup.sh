@@ -1,30 +1,69 @@
 #!/bin/bash
-# AWS VPC Kurulum Scripti
-# Proje Gereksinimi: 10.0.0.0/16 CIDR
+# ------------------------------------------------------------------
+# [01-vpc-setup.sh]
+# AWS VPC, Subnet, IGW, NAT Gateway ve Route Table Kurulumu
+# ------------------------------------------------------------------
 
-echo "VPC Kurulumu Başlıyor..."
+echo "ğŸš€ VPC Kurulumu BaÅŸlÄ±yor..."
 
-# 1. VPC Oluşturma
-# Bu komut sanal ağın duvarlarını örer.
-VPC_ID=$(aws ec2 create-vpc --cidr-block 10.0.0.0/16 --query "Vpc.VpcId" --output text)
-echo "VPC Oluşturuldu: $VPC_ID"
-
-# VPC"ye isim etiketi yapıştır (Konsolda bulmak kolay olsun diye)
+# 1. VPC OluÅŸturma (10.0.0.0/16)
+VPC_ID=$(aws ec2 create-vpc --cidr-block 10.0.0.0/16 --query 'Vpc.VpcId' --output text)
 aws ec2 create-tags --resources $VPC_ID --tags Key=Name,Value=emir-dns-project-vpc
-
-# 2. DNS Ayarlarını Açma [cite: 42-43]
-# Bu olmazsa sunucular internete isimle çıkamaz.
-aws ec2 modify-vpc-attribute --vpc-id $VPC_ID --enable-dns-support "{\"Value\":true}"
 aws ec2 modify-vpc-attribute --vpc-id $VPC_ID --enable-dns-hostnames "{\"Value\":true}"
+echo "âœ… VPC OluÅŸturuldu: $VPC_ID"
 
-# 3. Internet Gateway (IGW) Oluşturma 
-# Bu, VPC"nin internete açılan kapısıdır.
-IGW_ID=$(aws ec2 create-internet-gateway --query "InternetGateway.InternetGatewayId" --output text)
-echo "Internet Gateway Oluşturuldu: $IGW_ID"
-
-aws ec2 create-tags --resources $IGW_ID --tags Key=Name,Value=emir-dns-project-igw
+# 2. Internet Gateway (IGW) OluÅŸturma
+IGW_ID=$(aws ec2 create-internet-gateway --query 'InternetGateway.InternetGatewayId' --output text)
 aws ec2 attach-internet-gateway --internet-gateway-id $IGW_ID --vpc-id $VPC_ID
+aws ec2 create-tags --resources $IGW_ID --tags Key=Name,Value=emir-dns-igw
+echo "âœ… IGW OluÅŸturuldu ve VPC'ye baÄŸlandÄ±: $IGW_ID"
 
-echo "Temel VPC ve Internet Gateway Hazır!"
-echo "Lütfen Subnet kurulumuna geçin."
+# 3. Subnetlerin OluÅŸturulmasÄ±
+echo "ğŸŒ Subnetler OluÅŸturuluyor..."
 
+# Public Subnet 1 (us-east-1a)
+PUB_SUB_1=$(aws ec2 create-subnet --vpc-id $VPC_ID --cidr-block 10.0.1.0/24 --availability-zone us-east-1a --query 'Subnet.SubnetId' --output text)
+aws ec2 create-tags --resources $PUB_SUB_1 --tags Key=Name,Value=Public-Subnet-1
+aws ec2 modify-subnet-attribute --subnet-id $PUB_SUB_1 --map-public-ip-on-launch
+
+# Public Subnet 2 (us-east-1b)
+PUB_SUB_2=$(aws ec2 create-subnet --vpc-id $VPC_ID --cidr-block 10.0.2.0/24 --availability-zone us-east-1b --query 'Subnet.SubnetId' --output text)
+aws ec2 create-tags --resources $PUB_SUB_2 --tags Key=Name,Value=Public-Subnet-2
+aws ec2 modify-subnet-attribute --subnet-id $PUB_SUB_2 --map-public-ip-on-launch
+
+# Private Subnet 1 (us-east-1a) - MongoDB Primary
+PRI_SUB_1=$(aws ec2 create-subnet --vpc-id $VPC_ID --cidr-block 10.0.11.0/24 --availability-zone us-east-1a --query 'Subnet.SubnetId' --output text)
+aws ec2 create-tags --resources $PRI_SUB_1 --tags Key=Name,Value=Private-Subnet-1
+
+# Private Subnet 2 (us-east-1b) - MongoDB Secondary
+PRI_SUB_2=$(aws ec2 create-subnet --vpc-id $VPC_ID --cidr-block 10.0.12.0/24 --availability-zone us-east-1b --query 'Subnet.SubnetId' --output text)
+aws ec2 create-tags --resources $PRI_SUB_2 --tags Key=Name,Value=Private-Subnet-2
+
+echo "âœ… 4 Subnet HazÄ±r."
+
+# 4. NAT Gateway Kurulumu (Private Subnetlerin internete Ã§Ä±kmasÄ± iÃ§in)
+echo "ğŸ”Œ NAT Gateway Kuruluyor (Bu iÅŸlem 1-2 dakika sÃ¼rebilir)..."
+EIP_ALLOC=$(aws ec2 allocate-address --domain vpc --query 'AllocationId' --output text)
+NAT_GW_ID=$(aws ec2 create-nat-gateway --subnet-id $PUB_SUB_1 --allocation-id $EIP_ALLOC --query 'NatGateway.NatGatewayId' --output text)
+aws ec2 wait nat-gateway-available --nat-gateway-ids $NAT_GW_ID
+aws ec2 create-tags --resources $NAT_GW_ID --tags Key=Name,Value=emir-dns-nat-gw
+echo "âœ… NAT Gateway Aktif: $NAT_GW_ID"
+
+# 5. Route Table AyarlarÄ±
+echo "ğŸ—ºï¸ Route Table AyarlarÄ± YapÄ±lÄ±yor..."
+
+# Public Route Table (IGW'ye gider)
+RT_PUB=$(aws ec2 create-route-table --vpc-id $VPC_ID --query 'RouteTable.RouteTableId' --output text)
+aws ec2 create-route --route-table-id $RT_PUB --destination-cidr-block 0.0.0.0/0 --gateway-id $IGW_ID
+aws ec2 create-tags --resources $RT_PUB --tags Key=Name,Value=emir-public-rt
+aws ec2 associate-route-table --route-table-id $RT_PUB --subnet-id $PUB_SUB_1
+aws ec2 associate-route-table --route-table-id $RT_PUB --subnet-id $PUB_SUB_2
+
+# Private Route Table (NAT Gateway'e gider)
+RT_PRI=$(aws ec2 create-route-table --vpc-id $VPC_ID --query 'RouteTable.RouteTableId' --output text)
+aws ec2 create-route --route-table-id $RT_PRI --destination-cidr-block 0.0.0.0/0 --nat-gateway-id $NAT_GW_ID
+aws ec2 create-tags --resources $RT_PRI --tags Key=Name,Value=emir-private-rt
+aws ec2 associate-route-table --route-table-id $RT_PRI --subnet-id $PRI_SUB_1
+aws ec2 associate-route-table --route-table-id $RT_PRI --subnet-id $PRI_SUB_2
+
+echo "ğŸ‰ AÄŸ AltyapÄ±sÄ± (VPC) BaÅŸarÄ±yla Kuruldu!"

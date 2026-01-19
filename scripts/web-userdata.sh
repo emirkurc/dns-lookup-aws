@@ -1,12 +1,37 @@
 #!/bin/bash
-apt-get update -y
-apt-get install -y docker.io git
-systemctl start docker
-systemctl enable docker
-mkdir -p /app
-cd /app
-git clone https://github.com/emirr/dns-lookup-aws.git .
-cd application
-docker build -t dns-app .
-# TEK SATIR (ONE-LINER) �ALI�AN KOMUT:
-docker run -d --name web-app --restart always -p 5889:5889 -e MONGO_HOST="MONGODB_PRIVATE_IP_ADRESI" -e MONGO_USERNAME=admin -e MONGO_PASSWORD=secret -e FLASK_PORT=5889 dns-app
+# ------------------------------------------------------------------
+# [web-userdata.sh]
+# Web Uygulama Sunucusu Başlangıç Scripti (Amazon Linux 2023)
+# ------------------------------------------------------------------
+
+# Loglama ayarı (/var/log/user-data.log dosyasına yazar)
+exec > >(tee /var/log/user-data.log|logger -t user-data -s) 2>&1
+echo "🚀 Web App Kurulumu Başlıyor..."
+
+# 1. Paketlerin Yüklenmesi
+yum update -y
+yum install -y docker python3-pip git
+
+# 2. Docker Servisinin Başlatılması
+service docker start
+usermod -a -G docker ec2-user
+chkconfig docker on
+
+# 3. Docker Compose Kurulumu
+# Amazon Linux reposunda native olmadığı için binary'den kuruyoruz.
+curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64" -o /usr/local/bin/docker-compose
+chmod +x /usr/local/bin/docker-compose
+
+# 4. Uygulama Dizinini Hazırla
+mkdir -p /app/application
+cd /app/application
+
+# NOT: Gerçek deployment sırasında bu dosyalar (app.py, Dockerfile vb.)
+# 04-web-app-deployment.sh tarafından Base64 decode edilerek buraya yazılır.
+# Bu script referans amaçlıdır.
+
+# 5. Konteynerleri Ayağa Kaldır
+# Secrets Manager ve CloudWatch Log Driver entegrasyonu ile başlatır.
+docker-compose up -d --build
+
+echo "✅ Web Uygulaması Başlatıldı."

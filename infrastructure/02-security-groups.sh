@@ -1,26 +1,40 @@
 #!/bin/bash
-# 02-security-groups.sh
-# Amaç: Load Balancer, Web Sunucusu ve MongoDB için güvenlik duvarlarını kurmak
+# ------------------------------------------------------------------
+# [02-security-groups.sh]
+# Security Group (GÃ¼venlik DuvarÄ±) Kurulumu
+# ------------------------------------------------------------------
 
-echo "Güvenlik Grupları Oluşturuluyor..."
+echo "ğŸ›¡ï¸ Security Groups OluÅŸturuluyor..."
 
-# 1. ALB Security Group (Herkese Açık)
-ALB_SG=$(aws ec2 create-security-group --group-name ALB-SG --description "ALB Security Group" --vpc-id $VPC_ID --query "GroupId" --output text)
-aws ec2 create-tags --resources $ALB_SG --tags Key=Name,Value=ALB-SG
+# VPC ID'yi bul
+VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=emir-dns-project-vpc" --query "Vpcs[0].VpcId" --output text)
+
+if [ -z "$VPC_ID" ]; then
+    echo "âŒ HATA: VPC bulunamadÄ±. Ã–nce 01-vpc-setup.sh Ã§alÄ±ÅŸtÄ±rÄ±lmalÄ±."
+    exit 1
+fi
+
+# 1. Load Balancer SG (ALB-SG)
+# Ä°nternetten gelen HTTP (80) isteklerini kabul eder.
+ALB_SG=$(aws ec2 create-security-group --group-name ALB-SG --description "Allow HTTP from Internet" --vpc-id $VPC_ID --query 'GroupId' --output text)
 aws ec2 authorize-security-group-ingress --group-id $ALB_SG --protocol tcp --port 80 --cidr 0.0.0.0/0
-echo "ALB SG Oluşturuldu: $ALB_SG"
+aws ec2 create-tags --resources $ALB_SG --tags Key=Name,Value=ALB-SG
+echo "âœ… ALB-SG OluÅŸturuldu: $ALB_SG"
 
-# 2. Web Server Security Group (Sadece ALB"ye Açık)
-WEB_SG=$(aws ec2 create-security-group --group-name Web-SG --description "Web Server Security Group" --vpc-id $VPC_ID --query "GroupId" --output text)
-aws ec2 create-tags --resources $WEB_SG --tags Key=Name,Value=Web-SG
+# 2. Web Server SG (Web-SG)
+# Sadece ALB'den gelen trafiÄŸi kabul eder (Port 5889).
+WEB_SG=$(aws ec2 create-security-group --group-name Web-SG --description "Allow traffic from ALB" --vpc-id $VPC_ID --query 'GroupId' --output text)
 aws ec2 authorize-security-group-ingress --group-id $WEB_SG --protocol tcp --port 5889 --source-group $ALB_SG
-# Yönetim için SSH (Opsiyonel/Geçici)
-aws ec2 authorize-security-group-ingress --group-id $WEB_SG --protocol tcp --port 22 --cidr 0.0.0.0/0
-echo "Web SG Oluşturuldu: $WEB_SG"
+# SSH Ä°zni (Opsiyonel - Debug iÃ§in kendi IP'nizi verebilirsiniz, ÅŸimdilik kapalÄ± gÃ¼venli)
+# aws ec2 authorize-security-group-ingress --group-id $WEB_SG --protocol tcp --port 22 --cidr 0.0.0.0/0 
+aws ec2 create-tags --resources $WEB_SG --tags Key=Name,Value=Web-SG
+echo "âœ… Web-SG OluÅŸturuldu: $WEB_SG"
 
-# 3. MongoDB Security Group (Sadece Web Server"a Açık - Private)
-DB_SG=$(aws ec2 create-security-group --group-name Mongo-SG --description "MongoDB Security Group" --vpc-id $VPC_ID --query "GroupId" --output text)
-aws ec2 create-tags --resources $DB_SG --tags Key=Name,Value=Mongo-SG
+# 3. MongoDB SG (MongoDB-SG)
+# Sadece Web SunucularÄ±ndan gelen trafiÄŸi kabul eder (Port 27017).
+DB_SG=$(aws ec2 create-security-group --group-name MongoDB-SG --description "Allow traffic from Web App" --vpc-id $VPC_ID --query 'GroupId' --output text)
 aws ec2 authorize-security-group-ingress --group-id $DB_SG --protocol tcp --port 27017 --source-group $WEB_SG
-echo "MongoDB SG Oluşturuldu: $DB_SG"
+aws ec2 create-tags --resources $DB_SG --tags Key=Name,Value=MongoDB-SG
+echo "âœ… MongoDB-SG OluÅŸturuldu: $DB_SG"
 
+echo "ğŸ‰ GÃ¼venlik GruplarÄ± HazÄ±r!"

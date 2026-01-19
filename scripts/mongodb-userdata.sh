@@ -1,34 +1,31 @@
 #!/bin/bash
-# Sistem Güncellemelerini Yap
+# ------------------------------------------------------------------
+# [mongodb-userdata.sh]
+# MongoDB Sunucusu BaÅŸlangÄ±Ã§ Scripti (Ubuntu)
+# ------------------------------------------------------------------
+
+# LoglarÄ± kaydet (Hata ayÄ±klama iÃ§in)
+exec > >(tee /var/log/user-data.log|logger -t user-data -s) 2>&1
+echo "ðŸƒ MongoDB Kurulumu BaÅŸlÄ±yor..."
+
+# 1. Sistem GÃ¼ncelleme ve Docker Kurulumu
 apt-get update -y
-apt-get upgrade -y
+apt-get install -y docker.io
 
-# Docker Kurulumu
-apt-get install -y ca-certificates curl gnupg
-install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-chmod a+r /etc/apt/keyrings/docker.gpg
-
-echo \
-  "deb [arch="$(dpkg --print-architecture)" signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-  "$(. /etc/os-release && echo "$VERSION_CODENAME")" stable" | \
-  tee /etc/apt/sources.list.d/docker.list > /dev/null
-
-apt-get update -y
-apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-
-# Docker Servisini Baþlat
+# 2. Docker Servisini BaÅŸlat
 systemctl start docker
 systemctl enable docker
 
-# MongoDB Containerý Baþlat (Authentication Açýk)
-# Kullanýcý adý: admin, Þifre: secret (Projede bu þifreyi deðiþtireceðiz ama þimdilik test için kalsýn)
-docker run -d \
+# 3. MongoDB Konteynerini BaÅŸlat
+# - Root yetkileri ile (admin/StrongPassword123!)
+# - Veriler /data/db klasÃ¶rÃ¼nde kalÄ±cÄ± hale getirilir (Volume Mapping)
+# - --restart always ile sunucu kapanÄ±p aÃ§Ä±lsa bile devreye girer.
+docker run -d -p 27017:27017 \
   --name mongodb \
-  --restart always \
-  -p 27017:27017 \
   -e MONGO_INITDB_ROOT_USERNAME=admin \
-  -e MONGO_INITDB_ROOT_PASSWORD=secret \
+  -e MONGO_INITDB_ROOT_PASSWORD=StrongPassword123! \
   -v mongodb_data:/data/db \
-  mongo:6.0
+  --restart always \
+  mongo:4.4
 
+echo "âœ… MongoDB BaÅŸarÄ±yla BaÅŸlatÄ±ldÄ±."
